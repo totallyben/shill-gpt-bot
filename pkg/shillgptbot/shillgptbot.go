@@ -236,7 +236,16 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
-		state.tweetLink = update.Message.Text
+		tweetUrl := update.Message.Text
+		parsedUrl, err := url.Parse(tweetUrl)
+		if err != nil {
+			sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
+			return
+		}
+		parsedUrl.RawQuery = ""
+		tweetUrl = parsedUrl.String()
+
+		state.tweetLink = tweetUrl
 		sb.updateChatShillState(chatID, state)
 		sb.deleteMessage(ctx, chatID, update.Message.ID)
 		sb.deleteMessage(ctx, chatID, state.lastPrompt.ID)
