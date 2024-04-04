@@ -52,6 +52,7 @@ type shillState struct {
 	user       models.User
 	tweetLink  string
 	tweetText  string
+	lastPrompt *models.Message
 }
 
 func NewShillGPTBot() *shillGPTBot {
@@ -144,7 +145,13 @@ func (sb *shillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *mod
 	state.inProgress = true
 	state.user = *update.Message.From
 	sb.updateChatShillState(chatID, state)
-	sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the tweet link")
+	prompt, err := sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the tweet link")
+	if err != nil {
+		sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
+		return
+	}
+	state.lastPrompt = prompt
+	sb.updateChatShillState(chatID, state)
 }
 
 // cancelHandler
@@ -177,11 +184,11 @@ func (sb *shillGPTBot) sendMessageAndReset(ctx context.Context, b *bot.Bot, chat
 }
 
 // sendMessageWithCancel
-func (sb *shillGPTBot) sendMessageWithCancel(ctx context.Context, b *bot.Bot, chatID int64, message string) {
+func (sb *shillGPTBot) sendMessageWithCancel(ctx context.Context, b *bot.Bot, chatID int64, message string) (*models.Message, error) {
 	kb := inline.New(b).
 		Button("Cancel", []byte("cancel"), sb.onInlineKeyboardSelect)
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
+	return b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        message,
 		ReplyMarkup: kb,
@@ -232,7 +239,14 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 		state.tweetLink = update.Message.Text
 		sb.updateChatShillState(chatID, state)
 		sb.deleteMessage(ctx, chatID, update.Message.ID)
-		sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the original tweet text")
+		sb.deleteMessage(ctx, chatID, state.lastPrompt.ID)
+		prompt, err := sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the original tweet text")
+		if err != nil {
+			sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
+			return
+		}
+		state.lastPrompt = prompt
+		sb.updateChatShillState(chatID, state)
 		return
 	}
 
@@ -241,6 +255,7 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 		state.tweetText = update.Message.Text
 		sb.updateChatShillState(chatID, state)
 		sb.deleteMessage(ctx, chatID, update.Message.ID)
+		sb.deleteMessage(ctx, chatID, state.lastPrompt.ID)
 
 		link, err := sb.generateShillLink(chatID)
 		if err != nil {
@@ -274,7 +289,7 @@ Just click on the SHILL NOW button to generate your own, AI SHILL reply.
 
 // startHandler
 func (sb *shillGPTBot) startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	sb.sendMessage(ctx, b, update.Message.Chat.ID, "Let's get Trolling!", &models.ReplyParameters{})
+	sb.sendMessage(ctx, b, update.Message.Chat.ID, "Let's get shilling!", &models.ReplyParameters{})
 }
 
 // helpHandler
