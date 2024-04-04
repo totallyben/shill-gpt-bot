@@ -1,0 +1,19 @@
+version: '3.3'
+
+services:
+  shill-bot-p1:
+    image: ${IMAGE}
+    container_name: shill-bot
+    restart: always
+    volumes:
+      - ${CONFIG}:/root/.shill-bot.yaml
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: eu-west-2
+        awslogs-group: tb-prod
+        awslogs-stream: shill-bot
+
+networks:
+  default:
+    name: tb

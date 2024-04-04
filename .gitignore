@@ -1,0 +1,8 @@
+tmp
+shill-gpt-bot
+sagemaker/
+out*
+.*.swp
+*.php
+scripts/
+.vscode

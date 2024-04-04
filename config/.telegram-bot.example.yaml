@@ -1,0 +1,23 @@
+env: production
+
+timezone: "Europe/London"
+
+mongo:
+  host: 127.0.0.1
+  port: 27017
+  authSource: admin
+  username: xxxxxxxx
+  password: xxxxxxxx
+  DB: shill-bot
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: xxxxxxx
+  DB: 0
+
+telegram:
+  token: xxxxxxxxx
+
+openAI:
+  token: xxxxxxxxx
