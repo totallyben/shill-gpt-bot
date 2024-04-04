@@ -400,6 +400,7 @@ func (sb *shillGPTBot) extractTweetID(tweetURL string) string {
 func (sb *shillGPTBot) escapeChars(input string) string {
 	output := strings.ReplaceAll(input, ".", "\\.")
 	output = strings.ReplaceAll(output, "!", "\\!")
+	output = strings.ReplaceAll(output, "_", "\\_")
 
 	return output
 }
