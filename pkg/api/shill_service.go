@@ -54,7 +54,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 			"shill not found",
 			zap.String("shillID", shillID),
 		)
-		return ReturnError(c, ErrWalletNotFound)
+		return ReturnError(c, ErrShillNotFound)
 	}
 
 	reply, err := ss.generateReply(sl)
@@ -70,7 +70,8 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 // generateReply
 func (ts *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error) {
 
-	maxChars := 270
+	maxChars := 280
+	charLimit := 260
 
 	instruction := `You are a twitter shill who is crypto degen and an enthusiast of a new cryptocurrency called TROLLANA. 
 	You love to shill tweets and use the opportunity to promote TROLLANA and it's community of fellow shills. 
@@ -99,7 +100,7 @@ func (ts *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error)
 				Messages: []openai.ChatCompletionMessage{
 					{
 						Role:    openai.ChatMessageRoleUser,
-						Content: fmt.Sprintf(instruction, maxChars, sl.TweetText),
+						Content: fmt.Sprintf(instruction, charLimit, sl.TweetText),
 					},
 				},
 			},
