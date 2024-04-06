@@ -62,6 +62,18 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 		return ReturnError(c, err)
 	}
 
+	// store the reply
+	s := shillgptbot.NewShill(ss.a.mongo)
+	s.ChatID = sl.ChatID
+	s.TweetID = sl.TweetID
+	s.Reply = reply
+	if err := s.Insert(s); err != nil {
+		ss.a.logger.Warn(
+			"Unable to store generated shill reply",
+			zap.String("shillID", shillID),
+		)
+	}
+
 	redirectUrl := fmt.Sprintf("https://twitter.com/intent/tweet?in_reply_to=%s&text=%s", sl.TweetID, url.QueryEscape(reply))
 
 	return c.Redirect(http.StatusFound, redirectUrl)
