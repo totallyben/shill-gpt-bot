@@ -382,7 +382,7 @@ func (sb *shillGPTBot) isTweetURL(rawURL string) bool {
 		return false
 	}
 
-	if u.Hostname() != "twitter.com" && u.Hostname() != "www.twitter.com" {
+	if u.Hostname() != "twitter.com" && u.Hostname() != "www.twitter.com" && u.Hostname() != "x.com" && u.Hostname() != "www.x.com" {
 		return false
 	}
 
