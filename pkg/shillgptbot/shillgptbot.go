@@ -52,6 +52,7 @@ type shillState struct {
 	user       models.User
 	tweetLink  string
 	tweetText  string
+	replyType  string
 	lastPrompt *models.Message
 }
 
@@ -112,6 +113,8 @@ func (sb *shillGPTBot) Run() {
 func (sb *shillGPTBot) registerHandlers() {
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/shillx", bot.MatchTypeExact, sb.shillHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/shillx@", bot.MatchTypePrefix, sb.shillHandler)
+	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/trollx", bot.MatchTypeExact, sb.trollHandler)
+	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/trollx@", bot.MatchTypePrefix, sb.trollHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/cancel", bot.MatchTypeExact, sb.cancelHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/cancel@", bot.MatchTypePrefix, sb.cancelHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, sb.startHandler)
@@ -121,6 +124,16 @@ func (sb *shillGPTBot) registerHandlers() {
 
 // shillHandler
 func (sb *shillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	sb.startShill(ctx, b, update, ShillLinkReplyTypeShill)
+}
+
+// trollHandler
+func (sb *shillGPTBot) trollHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	sb.startShill(ctx, b, update, ShillLinkReplyTypeTroll)
+}
+
+// startShill
+func (sb *shillGPTBot) startShill(ctx context.Context, b *bot.Bot, update *models.Update, replyType string) {
 	chatID := update.Message.Chat.ID
 
 	shillingMutex.Lock()
@@ -144,6 +157,7 @@ func (sb *shillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *mod
 
 	state.inProgress = true
 	state.user = *update.Message.From
+	state.replyType = replyType
 	sb.updateChatShillState(chatID, state)
 	prompt, err := sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the tweet link")
 	if err != nil {
@@ -359,6 +373,7 @@ func (sb *shillGPTBot) generateShillLink(chatID int64) (string, error) {
 	sl.TweetID = sb.extractTweetID(state.tweetLink)
 	sl.TweetLink = state.tweetLink
 	sl.TweetText = state.tweetText
+	sl.ReplyType = state.replyType
 
 	if err := sl.Insert(sl); err != nil {
 		return "", err
