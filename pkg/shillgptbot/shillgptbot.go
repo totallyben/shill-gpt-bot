@@ -286,16 +286,26 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
+		buttonLabel := "SHILL NOW!!"
+		adjective := "shilling"
+		action := "SHILL"
+		if state.replyType == ShillLinkReplyTypeTroll {
+			buttonLabel = "TROLL NOW!!"
+			adjective = "trolling"
+			action = "TROLL"
+		}
+
 		message := `%v
 
-Let's go shilling baby!!
+Let's go %v baby!!
 		
-Just click on the SHILL NOW button to generate your own, AI SHILL reply.
+Just click on the %v NOW button to generate your own, AI %v reply.
 		`
-		message = fmt.Sprintf(message, state.tweetLink)
+		message = fmt.Sprintf(message, state.tweetLink, adjective, action, action)
 		message = sb.escapeChars(message)
+
 		dialogNodes := []dialog.Node{
-			{ID: "shill", Text: message, Keyboard: [][]dialog.Button{{{Text: "SHILL NOW!!", URL: link}}}},
+			{ID: "shill", Text: message, Keyboard: [][]dialog.Button{{{Text: buttonLabel, URL: link}}}},
 		}
 		p := dialog.New(dialogNodes, dialog.Inline())
 		_, err = p.Show(ctx, b, update.Message.Chat.ID, "shill")
