@@ -295,13 +295,18 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 			action = "TROLL"
 		}
 
+		poweredBy := "\n\nPowered by $TROLLANA - https://t.me/TROLLANAOfficial"
+		if chatID == -1002038440299 {
+			poweredBy = ""
+		}
+
 		message := `%v
 
 Let's go %v baby!!
 		
-Just click on the %v NOW button to generate your own, AI %v reply.
+Just click on the %v NOW button to generate your own, AI %v reply.%v
 		`
-		message = fmt.Sprintf(message, state.tweetLink, adjective, action, action)
+		message = fmt.Sprintf(message, state.tweetLink, adjective, action, action, poweredBy)
 		message = sb.escapeChars(message)
 
 		dialogNodes := []dialog.Node{
@@ -426,6 +431,10 @@ func (sb *shillGPTBot) escapeChars(input string) string {
 	output := strings.ReplaceAll(input, ".", "\\.")
 	output = strings.ReplaceAll(output, "!", "\\!")
 	output = strings.ReplaceAll(output, "_", "\\_")
+	output = strings.ReplaceAll(output, "<", "\\<")
+	output = strings.ReplaceAll(output, ">", "\\>")
+	output = strings.ReplaceAll(output, "=", "\\=")
+	output = strings.ReplaceAll(output, "-", "\\-")
 
 	return output
 }
