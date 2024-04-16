@@ -250,6 +250,8 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
+		// fmt.Printf("quote: %v\n", update.Message.Quote.Text)
+
 		tweetUrl := update.Message.Text
 		parsedUrl, err := url.Parse(tweetUrl)
 		if err != nil {
