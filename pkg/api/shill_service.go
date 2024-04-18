@@ -3,15 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	openai "github.com/sashabaranov/go-openai"
-	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/shillgptbot"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/commandhandler/shillx"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -41,7 +40,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 	shillID := c.Param("shillID")
 
 	// check if we have a wallet
-	sl, found, err := shillgptbot.ShillLinkByID(ss.a.mongo, shillID)
+	sl, found, err := shillx.ShillLinkByID(ss.a.mongo, shillID)
 	if err != nil {
 		ss.a.logger.Error(
 			"could not fetch shill link",
@@ -65,7 +64,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 	}
 
 	// store the reply
-	s := shillgptbot.NewShill(ss.a.mongo)
+	s := shillx.NewShill(ss.a.mongo)
 	s.ChatID = sl.ChatID
 	s.TweetID = sl.TweetID
 	s.Reply = reply
@@ -82,7 +81,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 }
 
 // generateReply
-func (ss *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error) {
+func (ss *shillService) generateReply(sl *shillx.ShillLink) (string, error) {
 
 	maxChars := 280
 	charLimit := 260
@@ -137,102 +136,68 @@ func (ss *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error)
 }
 
 // aiInstruction
-func (ss *shillService) aiInstruction(sl *shillgptbot.ShillLink) string {
-	if sl.ChatID == 6722465333 {
-		return ss.aiInstructionTrollcoin(sl)
+func (ss *shillService) aiInstruction(sl *shillx.ShillLink) string {
+	c, found, err := config.ConfigByChatID(ss.a.mongo, sl.ChatID)
+	if err != nil {
+		ss.a.logger.Error(
+			"an error occurred trying to fetch config by chat ID",
+			zap.Int64("chatID", sl.ChatID),
+			zap.Error(err),
+		)
+		return ""
 	}
 
-	if sl.ChatID == -1002106403888 {
-		return ss.aiInstructionFish(sl)
+	if !found {
+		ss.a.logger.Error(
+			"could not find config for chat ID",
+			zap.Int64("chatID", sl.ChatID),
+			zap.Error(err),
+		)
+		return ""
 	}
 
-	return ss.aiInstructionTrollana(sl)
+	if sl.ReplyType == shillx.REPLY_TYPE_TROLL {
+		return ss.aiInstructionTroll(c)
+	}
+
+	return ss.aiInstructionShill(c)
 }
 
-// aiInstructionTrollana
-func (ss *shillService) aiInstructionTrollana(sl *shillgptbot.ShillLink) string {
-	instruction := `You are a crypto degen and an enthusiast of a new memecoin called TROLLANA. 
-	You love to reply to tweets related to crypto and use the opportunity to promote TROLLANA, it's awesome community and the fact it's one of the few, if not only memecoins with utility.
-	You are cheeky and are keen to mention the massive gains TROLLANA will bring.  
-	When you respond to tweets don't mention memes.  You can promote TROLLANA only and can disparage other coins in a friendly way.
-	When you create tweets you should always add the hashtag #TROLLANA and maybe include #TrollFam but try and keep the number of hashtags to a maxiumum of four but ideally keep to two.`
+// aiInstructionShill
+func (ss *shillService) aiInstructionShill(c config.Config) string {
+	instruction := `You are a crypto degen and an enthusiast of a new memecoin called %s. 
+	You love to reply to tweets related to crypto and use the opportunity to promote %s and it's awesome community.
+	It's community as describes itself as %s.
+	You are cheeky and are keen to mention the massive gains %s will bring.  
+	When you respond to tweets don't mention memes.  You can promote %s only and can disparage other coins in a friendly way.
+	When you create tweets you should try and include the hashtags "%s" and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
+	When you create tweets you should try and include the cashtags "%s" in the response.`
 
-	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
-		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
-		You can verge on being rude but always keep responses light hearted.
-		You can disparage others but in a jokey way.
-		You never promote harm, racism, homophobia, transphobia or have any strong political views.
-		When you create tweets you should always add the hashtag #TROLLANA and try and keep the number of hashtags to a maxiumum of four but ideally keep to two.`
-	}
-
-	return instruction
+	return fmt.Sprintf(
+		instruction,
+		c.Token,
+		c.Token,
+		c.Community,
+		c.Token,
+		c.Token,
+		c.Hashtags,
+		c.Cashtags,
+	)
 }
 
-// aiInstructionTrollcoin
-func (ts *shillService) aiInstructionTrollcoin(sl *shillgptbot.ShillLink) string {
-	instruction := `You are a crypto degen and an enthusiast of a new memecoin called Trollcoin. 
-	You love to reply to tweets related to crypto and use the opportunity to promote Trollcoin, it's awesome community and the fact it's one of oldest community tokens on Cronos, owned and managed by the community.
-	You are cheeky and are keen to mention the massive gains Trollcoin will bring.  
-	When you respond to tweets don't mention memes.  You can promote Trollcoin only and can disparage other coins in a friendly way.
-	When you create tweets you should try and include the hashtag #TrollFam and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
-	When you create tweets you should try and include '$Troll' in the response.`
+// aiInstructionTroll
+func (ss *shillService) aiInstructionTroll(c config.Config) string {
 
-	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
-		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
-		You can verge on being rude but always keep responses light hearted.
-		You can disparage others but in a jokey way.
-		You never promote harm, racism, homophobia, transphobia or have any strong political views.
-		When you create tweets you should try and include the hashtag #TrollFam and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
-		When you create tweets you should try and include '$Troll' in the response.`
-	}
+	instruction := `You are a twitter troll who enjoys making fun of other users tweets.
+	You can verge on being rude but always keep responses light hearted.
+	You can disparage others but in a jokey way.
+	You never promote harm, racism, homophobia, transphobia or have any strong political views.
+	When you create tweets you should try and include the hashtags "%s" and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
+	When you create tweets you should try and include the cashtags "%s" in the response.`
 
-	return instruction
-}
-
-// aiInstructionFish
-func (ts *shillService) aiInstructionFish(sl *shillgptbot.ShillLink) string {
-	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
-
-	// Generate a random number between 0 and 2
-	choice := rand.Intn(3)
-
-	sex := "boy"
-	pov := "young boy who's had his fish stolen"
-	hashtag := "#TeamLittleBoy"
-	extra := "You speak as though you like to speak like Gary Coleman's character Arnold from the TV show Diff'rent Strokes."
-
-	if choice == 1 {
-		sex = "girl"
-		pov = "young girl who's had her fish stolen"
-		hashtag = "#TeamLittleGirl"
-		extra = ""
-	} else if choice == 2 {
-		sex = "boy"
-		pov = "fish who was stolen"
-		hashtag = "#TeamFish"
-		extra = ""
-	}
-
-	instruction := `You are an enthusiast of a new memecoin called $FISH. 
-	$Fish is based on a meme of two young children; the older child is a boy holding a fish which he has stolen from the younger child who is a %v.  
-	The younger child is mad and the wording on the meme is "Bitch Stole My Fish".
-	You love to reply to tweets and use the opportunity to promote $Fish and when you reply you speak from the point of view of the %v in the meme and somehow work that into the reply.
-	When you respond to tweets don't mention other memecoins.  You can promote $FISH only and can disparage other coins in a friendly way.
-	When you create tweets you should try and include the hastag %v and also one of the following hashtags #BitchStoleMyFish or #BSMF but aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
-	When you create tweets you should try and include '$FISH' in the response.
-	%v`
-
-	instruction = fmt.Sprintf(instruction, sex, pov, hashtag, extra)
-
-	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
-		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
-		You can verge on being rude but always keep responses light hearted.
-		You can disparage others but in a jokey way.
-		You never promote harm, racism, homophobia, transphobia or have any strong political views.
-		When you create tweets you should try and include the hashtag #BitchStoleMyFish or #BSMF and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
-		When you create tweets you should try and include '$FISH' in the response.`
-	}
-
-	return instruction
+	return fmt.Sprintf(
+		instruction,
+		c.Hashtags,
+		c.Cashtags,
+	)
 }
