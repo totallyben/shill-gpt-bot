@@ -9,6 +9,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+const (
+	ShillLinkReplyTypeShill = "shill"
+	ShillLinkReplyTypeTroll = "troll"
+)
+
 type ShillLink struct {
 	ShillLinkRepository `json:"-" bson:"-"`
 	ID                  primitive.ObjectID `bson:"_id,omitempty"`
@@ -16,6 +21,7 @@ type ShillLink struct {
 	TweetID             string             `bson:"tweetId"`
 	TweetLink           string             `bson:"tweetLink"`
 	TweetText           string             `bson:"tweetText"`
+	ReplyType           string             `bson:"replyType"`
 	Created             time.Time
 }
 
@@ -23,6 +29,7 @@ type ShillLink struct {
 func NewShillLink(mongo *storage.Mongo) *ShillLink {
 	return &ShillLink{
 		ShillLinkRepository: NewShillLinkRepository(mongo),
+		ReplyType:           ShillLinkReplyTypeShill,
 	}
 }
 

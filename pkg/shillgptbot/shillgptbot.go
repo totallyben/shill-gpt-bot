@@ -52,6 +52,7 @@ type shillState struct {
 	user       models.User
 	tweetLink  string
 	tweetText  string
+	replyType  string
 	lastPrompt *models.Message
 }
 
@@ -112,6 +113,8 @@ func (sb *shillGPTBot) Run() {
 func (sb *shillGPTBot) registerHandlers() {
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/shillx", bot.MatchTypeExact, sb.shillHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/shillx@", bot.MatchTypePrefix, sb.shillHandler)
+	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/trollx", bot.MatchTypeExact, sb.trollHandler)
+	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/trollx@", bot.MatchTypePrefix, sb.trollHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/cancel", bot.MatchTypeExact, sb.cancelHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/cancel@", bot.MatchTypePrefix, sb.cancelHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, sb.startHandler)
@@ -121,6 +124,16 @@ func (sb *shillGPTBot) registerHandlers() {
 
 // shillHandler
 func (sb *shillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	sb.startShill(ctx, b, update, ShillLinkReplyTypeShill)
+}
+
+// trollHandler
+func (sb *shillGPTBot) trollHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	sb.startShill(ctx, b, update, ShillLinkReplyTypeTroll)
+}
+
+// startShill
+func (sb *shillGPTBot) startShill(ctx context.Context, b *bot.Bot, update *models.Update, replyType string) {
 	chatID := update.Message.Chat.ID
 
 	shillingMutex.Lock()
@@ -144,6 +157,7 @@ func (sb *shillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *mod
 
 	state.inProgress = true
 	state.user = *update.Message.From
+	state.replyType = replyType
 	sb.updateChatShillState(chatID, state)
 	prompt, err := sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the tweet link")
 	if err != nil {
@@ -236,6 +250,8 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
+		// fmt.Printf("quote: %v\n", update.Message.Quote.Text)
+
 		tweetUrl := update.Message.Text
 		parsedUrl, err := url.Parse(tweetUrl)
 		if err != nil {
@@ -272,16 +288,31 @@ func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
+		buttonLabel := "SHILL NOW!!"
+		adjective := "shilling"
+		action := "SHILL"
+		if state.replyType == ShillLinkReplyTypeTroll {
+			buttonLabel = "TROLL NOW!!"
+			adjective = "trolling"
+			action = "TROLL"
+		}
+
+		poweredBy := "\n\nPowered by $TROLLANA - https://t.me/TROLLANAOfficial"
+		if chatID == -1002038440299 {
+			poweredBy = ""
+		}
+
 		message := `%v
 
-Let's go shilling baby!!
+Let's go %v baby!!
 		
-Just click on the SHILL NOW button to generate your own, AI SHILL reply.
+Just click on the %v NOW button to generate your own, AI %v reply.%v
 		`
-		message = fmt.Sprintf(message, state.tweetLink)
+		message = fmt.Sprintf(message, state.tweetLink, adjective, action, action, poweredBy)
 		message = sb.escapeChars(message)
+
 		dialogNodes := []dialog.Node{
-			{ID: "shill", Text: message, Keyboard: [][]dialog.Button{{{Text: "SHILL NOW!!", URL: link}}}},
+			{ID: "shill", Text: message, Keyboard: [][]dialog.Button{{{Text: buttonLabel, URL: link}}}},
 		}
 		p := dialog.New(dialogNodes, dialog.Inline())
 		_, err = p.Show(ctx, b, update.Message.Chat.ID, "shill")
@@ -359,6 +390,7 @@ func (sb *shillGPTBot) generateShillLink(chatID int64) (string, error) {
 	sl.TweetID = sb.extractTweetID(state.tweetLink)
 	sl.TweetLink = state.tweetLink
 	sl.TweetText = state.tweetText
+	sl.ReplyType = state.replyType
 
 	if err := sl.Insert(sl); err != nil {
 		return "", err
@@ -401,6 +433,10 @@ func (sb *shillGPTBot) escapeChars(input string) string {
 	output := strings.ReplaceAll(input, ".", "\\.")
 	output = strings.ReplaceAll(output, "!", "\\!")
 	output = strings.ReplaceAll(output, "_", "\\_")
+	output = strings.ReplaceAll(output, "<", "\\<")
+	output = strings.ReplaceAll(output, ">", "\\>")
+	output = strings.ReplaceAll(output, "=", "\\=")
+	output = strings.ReplaceAll(output, "-", "\\-")
 
 	return output
 }
