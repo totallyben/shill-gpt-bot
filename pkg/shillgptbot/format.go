@@ -129,6 +129,7 @@ func LocalToUTCTime(localTime time.Time) time.Time {
 	return localTime.Add(-diff).UTC()
 }
 
+// PercentDiff
 func PercentDiff(value1 float64, value2 float64) float64 {
 	return ((value1 - value2) / value2) * 100
 }

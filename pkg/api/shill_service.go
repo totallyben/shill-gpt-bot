@@ -11,7 +11,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	openai "github.com/sashabaranov/go-openai"
-	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/shillgptbot"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/commandhandler/shillx"
 	"go.uber.org/zap"
 )
 
@@ -41,7 +41,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 	shillID := c.Param("shillID")
 
 	// check if we have a wallet
-	sl, found, err := shillgptbot.ShillLinkByID(ss.a.mongo, shillID)
+	sl, found, err := shillx.ShillLinkByID(ss.a.mongo, shillID)
 	if err != nil {
 		ss.a.logger.Error(
 			"could not fetch shill link",
@@ -65,7 +65,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 	}
 
 	// store the reply
-	s := shillgptbot.NewShill(ss.a.mongo)
+	s := shillx.NewShill(ss.a.mongo)
 	s.ChatID = sl.ChatID
 	s.TweetID = sl.TweetID
 	s.Reply = reply
@@ -82,7 +82,7 @@ func (ss *shillService) createTwitterReply(c echo.Context) error {
 }
 
 // generateReply
-func (ss *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error) {
+func (ss *shillService) generateReply(sl *shillx.ShillLink) (string, error) {
 
 	maxChars := 280
 	charLimit := 260
@@ -137,7 +137,7 @@ func (ss *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error)
 }
 
 // aiInstruction
-func (ss *shillService) aiInstruction(sl *shillgptbot.ShillLink) string {
+func (ss *shillService) aiInstruction(sl *shillx.ShillLink) string {
 	if sl.ChatID == 6722465333 {
 		return ss.aiInstructionTrollcoin(sl)
 	}
@@ -150,14 +150,14 @@ func (ss *shillService) aiInstruction(sl *shillgptbot.ShillLink) string {
 }
 
 // aiInstructionTrollana
-func (ss *shillService) aiInstructionTrollana(sl *shillgptbot.ShillLink) string {
+func (ss *shillService) aiInstructionTrollana(sl *shillx.ShillLink) string {
 	instruction := `You are a crypto degen and an enthusiast of a new memecoin called TROLLANA. 
 	You love to reply to tweets related to crypto and use the opportunity to promote TROLLANA, it's awesome community and the fact it's one of the few, if not only memecoins with utility.
 	You are cheeky and are keen to mention the massive gains TROLLANA will bring.  
 	When you respond to tweets don't mention memes.  You can promote TROLLANA only and can disparage other coins in a friendly way.
 	When you create tweets you should always add the hashtag #TROLLANA and maybe include #TrollFam but try and keep the number of hashtags to a maxiumum of four but ideally keep to two.`
 
-	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
+	if sl.ReplyType == shillx.REPLY_TYPE_TROLL {
 		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
 		You can verge on being rude but always keep responses light hearted.
 		You can disparage others but in a jokey way.
@@ -169,7 +169,7 @@ func (ss *shillService) aiInstructionTrollana(sl *shillgptbot.ShillLink) string 
 }
 
 // aiInstructionTrollcoin
-func (ts *shillService) aiInstructionTrollcoin(sl *shillgptbot.ShillLink) string {
+func (ts *shillService) aiInstructionTrollcoin(sl *shillx.ShillLink) string {
 	instruction := `You are a crypto degen and an enthusiast of a new memecoin called Trollcoin. 
 	You love to reply to tweets related to crypto and use the opportunity to promote Trollcoin, it's awesome community and the fact it's one of oldest community tokens on Cronos, owned and managed by the community.
 	You are cheeky and are keen to mention the massive gains Trollcoin will bring.  
@@ -177,7 +177,7 @@ func (ts *shillService) aiInstructionTrollcoin(sl *shillgptbot.ShillLink) string
 	When you create tweets you should try and include the hashtag #TrollFam and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
 	When you create tweets you should try and include '$Troll' in the response.`
 
-	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
+	if sl.ReplyType == shillx.REPLY_TYPE_TROLL {
 		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
 		You can verge on being rude but always keep responses light hearted.
 		You can disparage others but in a jokey way.
@@ -190,7 +190,7 @@ func (ts *shillService) aiInstructionTrollcoin(sl *shillgptbot.ShillLink) string
 }
 
 // aiInstructionFish
-func (ts *shillService) aiInstructionFish(sl *shillgptbot.ShillLink) string {
+func (ts *shillService) aiInstructionFish(sl *shillx.ShillLink) string {
 	// Seed the random number generator
 	rand.Seed(time.Now().UnixNano())
 
@@ -225,7 +225,7 @@ func (ts *shillService) aiInstructionFish(sl *shillgptbot.ShillLink) string {
 
 	instruction = fmt.Sprintf(instruction, sex, pov, hashtag, extra)
 
-	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
+	if sl.ReplyType == shillx.REPLY_TYPE_TROLL {
 		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
 		You can verge on being rude but always keep responses light hearted.
 		You can disparage others but in a jokey way.

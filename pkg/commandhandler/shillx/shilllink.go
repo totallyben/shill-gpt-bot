@@ -1,4 +1,4 @@
-package shillgptbot
+package shillx
 
 import (
 	"time"
@@ -7,11 +7,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
-)
-
-const (
-	ShillLinkReplyTypeShill = "shill"
-	ShillLinkReplyTypeTroll = "troll"
 )
 
 type ShillLink struct {
@@ -29,7 +24,7 @@ type ShillLink struct {
 func NewShillLink(mongo *storage.Mongo) *ShillLink {
 	return &ShillLink{
 		ShillLinkRepository: NewShillLinkRepository(mongo),
-		ReplyType:           ShillLinkReplyTypeShill,
+		ReplyType:           REPLY_TYPE_SHILL,
 	}
 }
 

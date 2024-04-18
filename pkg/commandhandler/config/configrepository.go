@@ -1,4 +1,4 @@
-package shillgptbot
+package config
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 type ConfigRepository interface {
 	Insert(c *Config) error
+	Update(c *Config) error
 	Find(filter bson.D, findOptions *options.FindOptions) ([]Config, error)
 	Collection() *mongo.Collection
 }
@@ -41,6 +42,19 @@ func (cr *configRepository) Insert(c *Config) error {
 	}
 
 	c.ID = result.InsertedID.(primitive.ObjectID)
+
+	return err
+}
+
+// Update
+func (cr *configRepository) Update(s *Config) error {
+	filter := bson.M{"_id": bson.M{"$eq": s.ID}}
+
+	_, err := cr.Collection().ReplaceOne(
+		context.Background(),
+		filter,
+		s,
+	)
 
 	return err
 }

@@ -1,4 +1,4 @@
-package shillgptbot
+package config
 
 import (
 	"time"
@@ -16,19 +16,20 @@ type Config struct {
 	Token            string             `bson:"token"`
 	Community        string             `bson:"community"`
 	Hashtags         string             `bson:"hashtags"`
+	Cashtags         string             `bson:"cashtags"`
 	Created          time.Time
 	Updated          time.Time
 }
 
 // NewShill
-func NewConfig(mongo *storage.Mongo) *Config {
-	return &Config{
+func NewConfig(mongo *storage.Mongo) Config {
+	return Config{
 		ConfigRepository: NewConfigRepository(mongo),
 	}
 }
 
-// ConfigByID
-func ConfigByID(mongo *storage.Mongo, ChatID string) (*Config, bool, error) {
+// ConfigByChatID
+func ConfigByChatID(mongo *storage.Mongo, ChatID int64) (Config, bool, error) {
 	sl := NewConfig(mongo)
 
 	filter := bson.D{
@@ -45,7 +46,7 @@ func ConfigByID(mongo *storage.Mongo, ChatID string) (*Config, bool, error) {
 		return sl, false, nil
 	}
 
-	sl = &results[0]
+	sl = results[0]
 	sl.ConfigRepository = NewConfigRepository(mongo)
 
 	return sl, true, nil
