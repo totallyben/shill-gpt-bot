@@ -4,17 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"os/signal"
-	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/commandhandler"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/commandhandler/config"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/commandhandler/shillx"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/commandhandler/trollx"
 	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/storage"
+	"gitlab.totallydev.com/gritzb/shill-gpt-bot/pkg/tghelper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -22,41 +24,45 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/go-telegram/ui/dialog"
-	"github.com/go-telegram/ui/keyboard/inline"
+)
+
+const (
+	COMMAND_NONE   = "none"
+	COMMAND_SHILL  = "shill"
+	COMMAND_TROLL  = "troll"
+	COMMAND_CONFIG = "config"
 )
 
 var (
 	telegramToken string
 	lastMessages  map[int64]*lastMessage
-	shilling      map[int64]shillState
+	bState        map[int64]*botState
 
-	shillingMutex = &sync.RWMutex{}
+	stateMutex = &sync.RWMutex{}
 )
+
+type botState struct {
+	activeCommand  string
+	user           models.User
+	commandHandler commandhandler.CommandHandler
+}
 
 type lastMessage struct {
 	messageID int
 	text      string
 }
 
-type shillGPTBot struct {
+type ShillGPTBot struct {
 	bot    *bot.Bot
 	logger *zap.Logger
 	atom   *zap.AtomicLevel
 	mongo  *storage.Mongo
+	tgh    tghelper.TGHelper
 	ready  bool
 }
 
-type shillState struct {
-	inProgress bool
-	user       models.User
-	tweetLink  string
-	tweetText  string
-	replyType  string
-	lastPrompt *models.Message
-}
-
-func NewShillGPTBot() *shillGPTBot {
+// NewShillGPTBot
+func NewShillGPTBot() *ShillGPTBot {
 	// see https://pkg.go.dev/go.uber.org/zap#AtomicLevel
 	atom := zap.NewAtomicLevel()
 	encoderCfg := zap.NewProductionEncoderConfig()
@@ -72,9 +78,9 @@ func NewShillGPTBot() *shillGPTBot {
 	atom.SetLevel(zap.DebugLevel)
 
 	lastMessages = make(map[int64]*lastMessage)
-	shilling = make(map[int64]shillState)
+	bState = make(map[int64]*botState)
 
-	return &shillGPTBot{
+	return &ShillGPTBot{
 		logger: logger,
 		atom:   &atom,
 		mongo:  storage.NewMongo(),
@@ -84,7 +90,7 @@ func NewShillGPTBot() *shillGPTBot {
 }
 
 // Run
-func (sb *shillGPTBot) Run() {
+func (sb *ShillGPTBot) Run() {
 	telegramToken = viper.GetString("telegram.token")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -103,6 +109,7 @@ func (sb *shillGPTBot) Run() {
 	}
 
 	sb.bot = b
+	sb.tgh = tghelper.NewTGHelper(b, sb.logger)
 
 	sb.registerHandlers()
 
@@ -110,7 +117,7 @@ func (sb *shillGPTBot) Run() {
 }
 
 // registerHandlers
-func (sb *shillGPTBot) registerHandlers() {
+func (sb *ShillGPTBot) registerHandlers() {
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/shillx", bot.MatchTypeExact, sb.shillHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/shillx@", bot.MatchTypePrefix, sb.shillHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/trollx", bot.MatchTypeExact, sb.trollHandler)
@@ -119,330 +126,157 @@ func (sb *shillGPTBot) registerHandlers() {
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/cancel@", bot.MatchTypePrefix, sb.cancelHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, sb.startHandler)
 	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, sb.helpHandler)
-	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/settings", bot.MatchTypeExact, sb.settingsHandler)
+	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/config", bot.MatchTypeExact, sb.configHandler)
+	sb.bot.RegisterHandler(bot.HandlerTypeMessageText, "/config@", bot.MatchTypePrefix, sb.configHandler)
 }
 
 // shillHandler
-func (sb *shillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	sb.startShill(ctx, b, update, ShillLinkReplyTypeShill)
+func (sb *ShillGPTBot) shillHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+
+	commandHandler := shillx.NewShillCommandHandler()
+	chatID := update.Message.Chat.ID
+
+	bs, ok := sb.botState(chatID)
+	if !ok || bs.activeCommand != COMMAND_SHILL {
+		bs = &botState{
+			activeCommand:  COMMAND_SHILL,
+			user:           *update.Message.From,
+			commandHandler: commandHandler,
+		}
+		bState[chatID] = bs
+	}
+
+	bs.commandHandler.Handle(ctx, b, update)
 }
 
 // trollHandler
-func (sb *shillGPTBot) trollHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	sb.startShill(ctx, b, update, ShillLinkReplyTypeTroll)
-}
+func (sb *ShillGPTBot) trollHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 
-// startShill
-func (sb *shillGPTBot) startShill(ctx context.Context, b *bot.Bot, update *models.Update, replyType string) {
+	commandHandler := trollx.NewTrollCommandHandler()
 	chatID := update.Message.Chat.ID
 
-	shillingMutex.Lock()
-	defer shillingMutex.Unlock()
-
-	state := sb.chatShillState(chatID)
-	canShill := !state.inProgress
-
-	if !canShill {
-		message := "shill in progress, click cancel or /cancel to start again"
-		_, err := sb.sendMessage(ctx, b, chatID, message, &models.ReplyParameters{})
-		if err != nil {
-			sb.logger.Warn(
-				"an issue occurred while to send already shilling message",
-				zap.Error(err),
-			)
+	bs, ok := sb.botState(chatID)
+	if !ok || bs.activeCommand != COMMAND_TROLL {
+		bs = &botState{
+			activeCommand:  COMMAND_TROLL,
+			user:           *update.Message.From,
+			commandHandler: commandHandler,
 		}
-		sb.deleteMessage(ctx, chatID, update.Message.ID)
-		return
+		bState[chatID] = bs
 	}
 
-	state.inProgress = true
-	state.user = *update.Message.From
-	state.replyType = replyType
-	sb.updateChatShillState(chatID, state)
-	prompt, err := sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the tweet link")
-	if err != nil {
-		sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
-		return
-	}
-	state.lastPrompt = prompt
-	sb.updateChatShillState(chatID, state)
+	bs.commandHandler.Handle(ctx, b, update)
 }
 
 // cancelHandler
-func (sb *shillGPTBot) cancelHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (sb *ShillGPTBot) cancelHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+
+	sb.cancel(ctx, b, update)
+}
+
+// cancel
+func (sb *ShillGPTBot) cancel(ctx context.Context, b *bot.Bot, update *models.Update) {
+	fmt.Printf("cancel!!")
 	chatID := update.Message.Chat.ID
 
-	shillingMutex.Lock()
-	defer shillingMutex.Unlock()
-
-	state := sb.chatShillState(chatID)
-	if !state.inProgress {
-		return
+	bs, ok := sb.botState(chatID)
+	if ok {
+		bs.activeCommand = COMMAND_NONE
+		bs.commandHandler.Cancel(chatID)
 	}
 
-	sb.sendCancelMessage(ctx, b, chatID)
-}
-
-// sendCancelMessage
-func (sb *shillGPTBot) sendCancelMessage(ctx context.Context, b *bot.Bot, chatID int64) {
-	sb.sendMessageAndReset(ctx, b, chatID, "cancelled")
-}
-
-// sendMessageAndReset
-func (sb *shillGPTBot) sendMessageAndReset(ctx context.Context, b *bot.Bot, chatID int64, message string) {
-	shilling[chatID] = shillState{}
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   message,
-	})
-}
-
-// sendMessageWithCancel
-func (sb *shillGPTBot) sendMessageWithCancel(ctx context.Context, b *bot.Bot, chatID int64, message string) (*models.Message, error) {
-	kb := inline.New(b).
-		Button("Cancel", []byte("cancel"), sb.onInlineKeyboardSelect)
-
-	return b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        message,
-		ReplyMarkup: kb,
-	})
-}
-
-// onInlineKeyboardSelect
-func (sb *shillGPTBot) onInlineKeyboardSelect(ctx context.Context, b *bot.Bot, mes models.MaybeInaccessibleMessage, data []byte) {
-	chatID := mes.Message.Chat.ID
-
-	buttonValue := string(data)
-	if buttonValue == "cancel" {
-		sb.sendCancelMessage(ctx, b, chatID)
-	}
+	sb.tgh.SendCancelledMessage(ctx, b, chatID)
 }
 
 // defaultHandler
-func (sb *shillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (sb *ShillGPTBot) defaultHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if update == nil || update.Message == nil {
 		return
 	}
+
 	message := bot.EscapeMarkdown(update.Message.Text)
-	if len(message) == 0 {
+	if message == "cancelled" {
+		sb.cancel(ctx, b, update)
 		return
 	}
 
 	chatID := update.Message.Chat.ID
 
-	if _, ok := lastMessages[chatID]; !ok {
-		lastMessages[chatID] = &lastMessage{}
-	}
+	// if _, ok := lastMessages[chatID]; !ok {
+	// 	lastMessages[chatID] = &lastMessage{}
+	// }
 
-	lastMessages[chatID].messageID = update.Message.ID
-	lastMessages[chatID].text = update.Message.Text
+	// lastMessages[chatID].messageID = update.Message.ID
+	// lastMessages[chatID].text = update.Message.Text
 
-	state := sb.chatShillState(chatID)
-	if !state.inProgress || state.user.ID != update.Message.From.ID {
+	bs, ok := sb.botState(chatID)
+	if !ok {
 		return
 	}
 
-	// we don't have tweet link yet
-	if state.tweetLink == "" {
-		if !sb.isTweetURL(update.Message.Text) {
-			sb.sendMessageAndReset(ctx, b, chatID, "not a valid tweet url, please start again")
-			return
-		}
+	fmt.Printf("active command: %v\n", bs.activeCommand)
 
-		// fmt.Printf("quote: %v\n", update.Message.Quote.Text)
-
-		tweetUrl := update.Message.Text
-		parsedUrl, err := url.Parse(tweetUrl)
-		if err != nil {
-			sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
-			return
-		}
-		parsedUrl.RawQuery = ""
-		tweetUrl = parsedUrl.String()
-
-		state.tweetLink = tweetUrl
-		sb.updateChatShillState(chatID, state)
-		sb.deleteMessage(ctx, chatID, update.Message.ID)
-		sb.deleteMessage(ctx, chatID, state.lastPrompt.ID)
-		prompt, err := sb.sendMessageWithCancel(ctx, b, chatID, "Please provide the original tweet text")
-		if err != nil {
-			sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
-			return
-		}
-		state.lastPrompt = prompt
-		sb.updateChatShillState(chatID, state)
+	if bs.activeCommand == COMMAND_NONE {
 		return
 	}
 
-	// we don't have tweet text yet
-	if state.tweetText == "" {
-		state.tweetText = update.Message.Text
-		sb.updateChatShillState(chatID, state)
-		sb.deleteMessage(ctx, chatID, update.Message.ID)
-		sb.deleteMessage(ctx, chatID, state.lastPrompt.ID)
-
-		link, err := sb.generateShillLink(chatID)
-		if err != nil {
-			sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
-			return
-		}
-
-		buttonLabel := "SHILL NOW!!"
-		adjective := "shilling"
-		action := "SHILL"
-		if state.replyType == ShillLinkReplyTypeTroll {
-			buttonLabel = "TROLL NOW!!"
-			adjective = "trolling"
-			action = "TROLL"
-		}
-
-		poweredBy := "\n\nPowered by $TROLLANA - https://t.me/TROLLANAOfficial"
-		if chatID == -1002038440299 {
-			poweredBy = ""
-		}
-
-		message := `%v
-
-Let's go %v baby!!
-		
-Just click on the %v NOW button to generate your own, AI %v reply.%v
-		`
-		message = fmt.Sprintf(message, state.tweetLink, adjective, action, action, poweredBy)
-		message = sb.escapeChars(message)
-
-		dialogNodes := []dialog.Node{
-			{ID: "shill", Text: message, Keyboard: [][]dialog.Button{{{Text: buttonLabel, URL: link}}}},
-		}
-		p := dialog.New(dialogNodes, dialog.Inline())
-		_, err = p.Show(ctx, b, update.Message.Chat.ID, "shill")
-		if err != nil {
-			sb.sendMessageAndReset(ctx, b, chatID, "Sorry an error occurred, please try again")
-			log.Fatal(err)
-			return
-		}
-
-		sb.updateChatShillState(chatID, shillState{})
+	if bs.user.ID != update.Message.From.ID {
 		return
 	}
+
+	if bs.commandHandler.Done(chatID) {
+		bs.activeCommand = COMMAND_NONE
+	}
+
+	bs.commandHandler.Handle(ctx, b, update)
 }
 
 // startHandler
-func (sb *shillGPTBot) startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	sb.sendMessage(ctx, b, update.Message.Chat.ID, "Let's get shilling!", &models.ReplyParameters{})
+func (sb *ShillGPTBot) startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	sb.tgh.SendMessage(ctx, b, update.Message.Chat.ID, "Let's get shilling!", &models.ReplyParameters{})
 }
 
 // helpHandler
-func (sb *shillGPTBot) helpHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	sb.sendMessage(ctx, b, update.Message.Chat.ID, "Coming soon...", &models.ReplyParameters{})
+func (sb *ShillGPTBot) helpHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	sb.tgh.SendMessage(ctx, b, update.Message.Chat.ID, "Coming soon...", &models.ReplyParameters{})
 }
 
-// settingsHandler
-func (sb *shillGPTBot) settingsHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	sb.sendMessage(ctx, b, update.Message.Chat.ID, "Nothing to see here...", &models.ReplyParameters{})
-}
+// configHandler
+func (sb *ShillGPTBot) configHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 
-// sendMessage
-func (sb *shillGPTBot) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, message string, replyParams *models.ReplyParameters) (*models.Message, error) {
-	params := &bot.SendMessageParams{
-		ChatID:          chatID,
-		Text:            message,
-		ParseMode:       models.ParseModeHTML,
-		ReplyParameters: replyParams,
+	commandHandler := config.NewConfigCommandHandler()
+	chatID := update.Message.Chat.ID
+
+	bs, ok := sb.botState(chatID)
+	if !ok || bs.activeCommand != COMMAND_CONFIG {
+		bs = &botState{
+			activeCommand:  COMMAND_CONFIG,
+			user:           *update.Message.From,
+			commandHandler: commandHandler,
+		}
+		bState[chatID] = bs
 	}
 
-	// fmt.Printf("quote params %+v\n", params.ReplyParameters)
-
-	sentMessage, err := b.SendMessage(ctx, params)
-	if err != nil {
-		sb.logger.Error(
-			"an error occurred trying to send a message",
-			zap.Error(err),
-		)
-	}
-
-	return sentMessage, err
+	sb.tgh.DeleteMessage(ctx, chatID, update.Message.ID)
+	bs.commandHandler.Handle(ctx, b, update)
 }
 
-// deleteMessage
-func (sb *shillGPTBot) deleteMessage(ctx context.Context, chatID int64, messageID int) (bool, error) {
-	return sb.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
-		ChatID:    chatID,
-		MessageID: messageID,
-	})
-}
-
-// chatShillState
-func (sb *shillGPTBot) chatShillState(chatID int64) shillState {
-	state := shillState{}
-	if _, ok := shilling[chatID]; ok {
-		state = shilling[chatID]
-	}
-
-	return state
-}
-
-// generateShillLink
-func (sb *shillGPTBot) generateShillLink(chatID int64) (string, error) {
-	state := sb.chatShillState(chatID)
-	sl := NewShillLink(sb.mongo)
-	sl.ChatID = chatID
-	sl.TweetID = sb.extractTweetID(state.tweetLink)
-	sl.TweetLink = state.tweetLink
-	sl.TweetText = state.tweetText
-	sl.ReplyType = state.replyType
-
-	if err := sl.Insert(sl); err != nil {
-		return "", err
-	}
-
-	apiUrl := viper.GetString("apiUrl")
-	return fmt.Sprintf("%v/shill/%v", apiUrl, sl.ID.Hex()), nil
-}
-
-// updateChatShillState
-func (sb *shillGPTBot) updateChatShillState(chatID int64, state shillState) {
-	shilling[chatID] = state
-}
-
-// isTweetURL
-func (sb *shillGPTBot) isTweetURL(rawURL string) bool {
-	trimmedURL := strings.TrimSpace(rawURL)
-
-	u, err := url.Parse(trimmedURL)
-	if err != nil {
-		return false
-	}
-
-	if u.Hostname() != "twitter.com" && u.Hostname() != "www.twitter.com" && u.Hostname() != "x.com" && u.Hostname() != "www.x.com" {
-		return false
-	}
-
-	re := regexp.MustCompile(`^/[^/]+/status/\d+$`)
-	return re.MatchString(u.Path)
-}
-
-// extractTweetID
-func (sb *shillGPTBot) extractTweetID(tweetURL string) string {
-	parts := strings.Split(tweetURL, "/")
-	return parts[len(parts)-1]
-}
-
-// escapeChars
-func (sb *shillGPTBot) escapeChars(input string) string {
-	output := strings.ReplaceAll(input, ".", "\\.")
-	output = strings.ReplaceAll(output, "!", "\\!")
-	output = strings.ReplaceAll(output, "_", "\\_")
-	output = strings.ReplaceAll(output, "<", "\\<")
-	output = strings.ReplaceAll(output, ">", "\\>")
-	output = strings.ReplaceAll(output, "=", "\\=")
-	output = strings.ReplaceAll(output, "-", "\\-")
-
-	return output
+// botState
+func (sb *ShillGPTBot) botState(chatID int64) (*botState, bool) {
+	bs, ok := bState[chatID]
+	return bs, ok
 }
 
 // Logger
-func (sb *shillGPTBot) Logger() *zap.Logger {
+func (sb *ShillGPTBot) Logger() *zap.Logger {
 	atom := zap.NewAtomicLevel()
 	encoderCfg := zap.NewProductionEncoderConfig()
 	logger := zap.New(zapcore.NewCore(
@@ -456,7 +290,7 @@ func (sb *shillGPTBot) Logger() *zap.Logger {
 }
 
 // AtomicLevel
-func (sb *shillGPTBot) AtomicLevel() *zap.AtomicLevel {
+func (sb *ShillGPTBot) AtomicLevel() *zap.AtomicLevel {
 	atom := zap.NewAtomicLevel()
 	return &atom
 }

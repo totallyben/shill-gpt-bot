@@ -10,4 +10,5 @@ go build
 ```
 shillx - Create shill replies on X
 trollx - Create troll replies on X
+config - Configure me
 ```

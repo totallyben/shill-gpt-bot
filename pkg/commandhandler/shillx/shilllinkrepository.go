@@ -1,4 +1,4 @@
-package shillgptbot
+package shillx
 
 import (
 	"context"
