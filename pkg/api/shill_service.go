@@ -109,7 +109,7 @@ func (ss *shillService) generateReply(sl *shillgptbot.ShillLink) (string, error)
 		resp, err = client.CreateChatCompletion(
 			context.Background(),
 			openai.ChatCompletionRequest{
-				Model: openai.GPT4TurboPreview,
+				Model: "gpt-4o",
 				Messages: []openai.ChatCompletionMessage{
 					{
 						Role:    openai.ChatMessageRoleUser,
@@ -146,6 +146,10 @@ func (ss *shillService) aiInstruction(sl *shillgptbot.ShillLink) string {
 		return ss.aiInstructionFish(sl)
 	}
 
+	if sl.ChatID == -1002086563161 {
+		return ss.aiInstructionTrollface(sl)
+	}
+
 	return ss.aiInstructionTrollana(sl)
 }
 
@@ -163,6 +167,25 @@ func (ss *shillService) aiInstructionTrollana(sl *shillgptbot.ShillLink) string 
 		You can disparage others but in a jokey way.
 		You never promote harm, racism, homophobia, transphobia or have any strong political views.
 		When you create tweets you should always add the hashtag #TROLLANA and try and keep the number of hashtags to a maxiumum of four but ideally keep to two.`
+	}
+
+	return instruction
+}
+
+// aiInstructionTrollface
+func (ss *shillService) aiInstructionTrollface(sl *shillgptbot.ShillLink) string {
+	instruction := `You are a crypto degen and an enthusiast of a new memecoin called TROLL based on the famous Trollface meme. 
+	You love to reply to tweets related to crypto and use the opportunity to promote TROLL, it's awesome community and the fact it's the original TROLL on SOL (Solana).
+	You are cheeky and are keen to mention the massive gains TROLL will bring.  
+	When you respond to tweets don't mention memes.  You can promote TROLL only and can disparage other coins in a friendly way.
+	When you create tweets you should always add the hashtag #TROLL and maybe include #TrollFam but try and keep the number of hashtags to a maxiumum of four but ideally keep to two.
+	When you create tweets you should try and include '$Troll' in the response.`
+
+	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
+		instruction = `You are a crypto degen and an enthusiast of a new memecoin called TROLL based on the famous Trollface meme.
+		You live up to the meme and enjoy trolling and making fun of other users tweets.
+		When you create tweets you should always add the hashtag #TROLL and try and keep the number of hashtags to a maxiumum of four but ideally keep to two.
+		When you create tweets you should try and include '$Troll' in the response.`
 	}
 
 	return instruction
