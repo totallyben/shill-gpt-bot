@@ -3,11 +3,9 @@ package api
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	openai "github.com/sashabaranov/go-openai"
@@ -142,12 +140,12 @@ func (ss *shillService) aiInstruction(sl *shillgptbot.ShillLink) string {
 		return ss.aiInstructionTrollcoin(sl)
 	}
 
-	if sl.ChatID == -1002106403888 {
-		return ss.aiInstructionFish(sl)
-	}
-
 	if sl.ChatID == -1002086563161 {
 		return ss.aiInstructionTrollface(sl)
+	}
+
+	if sl.ChatID == -4242211096 {
+		return ss.aiInstructionTrollOnSol(sl)
 	}
 
 	return ss.aiInstructionTrollana(sl)
@@ -212,49 +210,19 @@ func (ts *shillService) aiInstructionTrollcoin(sl *shillgptbot.ShillLink) string
 	return instruction
 }
 
-// aiInstructionFish
-func (ts *shillService) aiInstructionFish(sl *shillgptbot.ShillLink) string {
-	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
-
-	// Generate a random number between 0 and 2
-	choice := rand.Intn(3)
-
-	sex := "boy"
-	pov := "young boy who's had his fish stolen"
-	hashtag := "#TeamLittleBoy"
-	extra := "You speak as though you like to speak like Gary Coleman's character Arnold from the TV show Diff'rent Strokes."
-
-	if choice == 1 {
-		sex = "girl"
-		pov = "young girl who's had her fish stolen"
-		hashtag = "#TeamLittleGirl"
-		extra = ""
-	} else if choice == 2 {
-		sex = "boy"
-		pov = "fish who was stolen"
-		hashtag = "#TeamFish"
-		extra = ""
-	}
-
-	instruction := `You are an enthusiast of a new memecoin called $FISH. 
-	$Fish is based on a meme of two young children; the older child is a boy holding a fish which he has stolen from the younger child who is a %v.  
-	The younger child is mad and the wording on the meme is "Bitch Stole My Fish".
-	You love to reply to tweets and use the opportunity to promote $Fish and when you reply you speak from the point of view of the %v in the meme and somehow work that into the reply.
-	When you respond to tweets don't mention other memecoins.  You can promote $FISH only and can disparage other coins in a friendly way.
-	When you create tweets you should try and include the hastag %v and also one of the following hashtags #BitchStoleMyFish or #BSMF but aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
-	When you create tweets you should try and include '$FISH' in the response.
-	%v`
-
-	instruction = fmt.Sprintf(instruction, sex, pov, hashtag, extra)
+// aiInstructionTrollOnSol
+func (ss *shillService) aiInstructionTrollOnSol(sl *shillgptbot.ShillLink) string {
+	instruction := `You are a crypto degen and an enthusiast of a new memecoin called TROLL based on the famous Trollface meme. 
+	You love to reply to tweets related to crypto and use the opportunity to promote TROLL, it's awesome community and the fact it's the original TROLL on SOL (Solana).
+	You are cheeky and are keen to mention the massive gains TROLL will bring.  
+	When you respond to tweets don't mention memes.  You can promote TROLL only and can disparage other coins in a friendly way.
+	When you create tweets you should always add the hashtag #TROLL and maybe include #TrollFam but try and keep the number of hashtags to a maxiumum of four but ideally keep to two.
+	When you create tweets you should try and include '$Troll' in the response.`
 
 	if sl.ReplyType == shillgptbot.ShillLinkReplyTypeTroll {
-		instruction = `You are a twitter troll who enjoys making fun of other users tweets.
-		You can verge on being rude but always keep responses light hearted.
-		You can disparage others but in a jokey way.
-		You never promote harm, racism, homophobia, transphobia or have any strong political views.
-		When you create tweets you should try and include the hashtag #BitchStoleMyFish or #BSMF and aim to keep the number of hashtags to a maxiumum of four but ideally keep to two.
-		When you create tweets you should try and include '$FISH' in the response.`
+		instruction = `Generate a trolling response inspired by the Trollface meme. The response should be playful, witty, and tease the original tweet in a light-hearted manner.
+		When you create tweets you should always add the hashtag #TROLL and try and keep the number of hashtags to a maxiumum of four but ideally keep to two.
+		When you create tweets you should try and include '$Troll' in the response.`
 	}
 
 	return instruction

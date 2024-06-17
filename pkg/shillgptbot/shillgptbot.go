@@ -136,6 +136,7 @@ func (sb *shillGPTBot) trollHandler(ctx context.Context, b *bot.Bot, update *mod
 func (sb *shillGPTBot) startShill(ctx context.Context, b *bot.Bot, update *models.Update, replyType string) {
 	chatID := update.Message.Chat.ID
 
+	// fmt.Printf("chatID: %v\n", chatID)
 	shillingMutex.Lock()
 	defer shillingMutex.Unlock()
 
