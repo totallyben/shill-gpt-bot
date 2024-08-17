@@ -446,8 +446,13 @@ func (cch *configCommandHandler) receiveTokenName(chs configHandlerState, ctx co
 
 // validateTokenName
 func (cch *configCommandHandler) validateTokenName(tokenName string) bool {
-	re := regexp.MustCompile(`^[\p{L}\p{N}]+$`)
-	return re.MatchString(tokenName)
+	if len(tokenName) < 1 || len(tokenName) > 32 {
+		return false
+	}
+
+	// Check if the string contains only allowed characters
+	isValidName := regexp.MustCompile(`^[a-zA-Z0-9 _\-]+$`).MatchString
+	return isValidName(tokenName)
 }
 
 // receiveHashTags
